@@ -3,27 +3,46 @@
 ### Consumer VPC Setup
 ###
 
+variable "consumer_public_cidr" {
+  type = string
+  default = "10.64.0.0/19"
+}
+
+variable "consumer_private_cidr" {
+  type = string
+  default = "10.96.0.0/19"
+}
+
+variable "consumer_public_subnet_cidr_blocks" {
+  type = list
+  default = [ "10.64.0.0/21", "10.64.8.0/21"]
+}
+
+variable "consumer_private_subnet_cidr_blocks" {
+  type = list
+  default = [ "10.96.0.0/21", "10.96.8.0/21"]
+}
 
 resource "aws_vpc" "consumer" {
-  cidr_block       = var.private_cidr
+  cidr_block       = var.consumer_private_cidr
   tags = {
-    Name = "${var.project_name}-consumer"
+    Name = "consumer"
   }
 }
 
 resource "aws_vpc_ipv4_cidr_block_association" "consumer_secondary_cidr" {
   vpc_id = aws_vpc.consumer.id
-  cidr_block = var.public_cidr
+  cidr_block = var.consumer_public_cidr
 }
 
 resource "aws_subnet" "consumer_public_subnets" {
   count                   = local.num_public_cidrs
   vpc_id                  = aws_vpc.consumer.id
-  cidr_block              = element(var.public_subnet_cidr_blocks, count.index)
+  cidr_block              = element(var.consumer_public_subnet_cidr_blocks, count.index)
   availability_zone       = element(data.aws_availability_zones.available.names, count.index % local.num_availability_zones)
   map_public_ip_on_launch = true
   tags = {
-    Name = "${var.project_name}-consumer-public_subnet-${count.index}",
+    Name = "consumer-public-${count.index}",
     Type = "Public"
   }
   depends_on = [ aws_vpc.consumer ]
@@ -35,7 +54,7 @@ resource "aws_internet_gateway" "consumer_igw" {
   vpc_id = aws_vpc.consumer.id
 
   tags = {
-    Name = "${var.project_name}-consumer-igw"
+    Name = "consumer-igw"
   }
 }
 
@@ -43,7 +62,7 @@ resource "aws_route_table" "consumer_public_route_table" {
   count  = local.num_public_cidrs
   vpc_id = aws_vpc.consumer.id
   tags = {
-    Name = "${var.project_name}-consumer-public_route_table-${count.index}"
+    Name = "consumer-public-${count.index}"
   }
 }
 
@@ -77,11 +96,11 @@ resource "aws_route_table_association" "consumer_public_route_association" {
 resource "aws_subnet" "consumer_private_subnets" {
   count                   = local.num_private_cidrs
   vpc_id                  = aws_vpc.consumer.id
-  cidr_block              = element(var.private_subnet_cidr_blocks, count.index)
+  cidr_block              = element(var.consumer_private_subnet_cidr_blocks, count.index)
   availability_zone       = element(data.aws_availability_zones.available.names, count.index % local.num_availability_zones)
   map_public_ip_on_launch = "false"
   tags = {
-    Name = "${var.project_name}-consumer-private_subnet-${count.index}",
+    Name = "consumer-private-${count.index}",
     Type = "Private"
   }
   depends_on = [ aws_vpc_ipv4_cidr_block_association.consumer_secondary_cidr ]
@@ -91,11 +110,21 @@ resource "aws_route_table" "consumer_private_route_table" {
   count  = local.num_private_cidrs
   vpc_id = aws_vpc.consumer.id
   tags = {
-    Name = "${var.project_name}-consumer-private_route_table-${count.index}"
+    Name = "consumer-private-${count.index}"
   }
 }
 
-resource "aws_route" "consumer_tgw_route" {
+resource "aws_route" "consumer_internal_tgw_route" {
+  count                  = local.num_private_cidrs
+  destination_cidr_block = "10.0.0.0/8"
+  transit_gateway_id = aws_ec2_transit_gateway.consumer_fd_main.id
+  route_table_id         = element(aws_route_table.consumer_private_route_table.*.id, count.index)
+  timeouts {
+    create = "10m"
+  }
+}
+
+resource "aws_route" "consumer_external_tgw_route" {
   count                  = local.num_private_cidrs
   destination_cidr_block = "0.0.0.0/0"
   transit_gateway_id = aws_ec2_transit_gateway.consumer_fd_main.id
@@ -105,6 +134,7 @@ resource "aws_route" "consumer_tgw_route" {
   }
 }
 
+
 resource "aws_route_table_association" "consumer_private_route_association" {
   count          = local.num_private_cidrs
   subnet_id      = element(aws_subnet.consumer_private_subnets.*.id, count.index)
@@ -113,7 +143,7 @@ resource "aws_route_table_association" "consumer_private_route_association" {
 
 ### Wide open security groups, we're not testing that.
 resource "aws_security_group" "consumer_HostSg" {
-  name = "${var.project_name}-consumer Host SG"
+  name = "consumer Host SG"
   vpc_id = aws_vpc.consumer.id
 
   ingress {
@@ -131,7 +161,7 @@ resource "aws_security_group" "consumer_HostSg" {
   }
 
   tags = {
-    Name = "${var.project_name}-consumer-HostSg"
+    Name = "consumer-HostSg"
   }
 }
 
@@ -165,9 +195,9 @@ data "aws_subnet_ids" "consumer_private_subnets" {
 }
 
 resource "aws_ec2_transit_gateway" "consumer_fd_main" {
-  description = "FD Transit Gateway"
+  description = "Consumer FD Transit Gateway"
   tags = {
-    Name = "${var.project_name}-consumer-TGW",
+    Name = "consumer FD TGW",
   }
 }
 
@@ -176,6 +206,6 @@ resource "aws_ec2_transit_gateway_vpc_attachment" "consumer_fd_tgw_attach" {
   transit_gateway_id = aws_ec2_transit_gateway.consumer_fd_main.id
   vpc_id = aws_vpc.consumer.id
   tags = {
-    Name = "${var.project_name}-consumer-TGW-attach",
+    Name = "consumer-TGW-attach",
   }
 }

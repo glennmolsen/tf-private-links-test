@@ -4,7 +4,7 @@
 ###
 
 
-resource "aws_instance" "consumer_testInstances" {
+resource "aws_instance" "consumers" {
   count = local.num_public_cidrs
   ami = data.aws_ami.ubuntu.id
   instance_type = "t2.micro"
@@ -15,13 +15,15 @@ resource "aws_instance" "consumer_testInstances" {
     aws_security_group.consumer_HostSg.id,]
   associate_public_ip_address = true
   tags = {
-    Name = "${var.project_name}-consumer-test_instance-${count.index}"
+    Name = "consumer-${count.index}"
   }
 
   provisioner "remote-exec" {
     inline = [
       "sudo apt-get update",
-      "sudo apt install traceroute"
+      "sudo apt install traceroute",
+      "sudo apt-get install -y nginx",
+      "sudo /etc/init.d/nginx start",
     ]
 
     connection {
@@ -37,18 +39,18 @@ resource "aws_instance" "consumer_testInstances" {
 ###
 ### Consumer Endpoint Setup
 ###
-
-// comment out to demonstrate BEFORE | AFTER
-resource "aws_vpc_endpoint" "pltest_service" {
-  vpc_id            = aws_vpc.consumer.id
-  service_name = aws_vpc_endpoint_service.provider_service.service_name
-  vpc_endpoint_type = "Interface"
-
-  security_group_ids = [
-    aws_security_group.consumer_HostSg.id,
-  ]
-
-  subnet_ids = data.aws_subnet_ids.consumer_private_subnets.ids
-  private_dns_enabled = false
-  depends_on = [ aws_vpc_endpoint_service.provider_service ]
-}
+//
+//// comment out to demonstrate BEFORE | AFTER
+//resource "aws_vpc_endpoint" "pltest_service" {
+//  vpc_id            = aws_vpc.consumer.id
+//  service_name = aws_vpc_endpoint_service.provider_service.service_name
+//  vpc_endpoint_type = "Interface"
+//
+//  security_group_ids = [
+//    aws_security_group.consumer_HostSg.id,
+//  ]
+//
+//  subnet_ids = data.aws_subnet_ids.consumer_private_subnets.ids
+//  private_dns_enabled = false
+//  depends_on = [ aws_vpc_endpoint_service.provider_service ]
+//}
